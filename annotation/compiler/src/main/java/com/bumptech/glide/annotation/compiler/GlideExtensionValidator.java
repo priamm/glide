@@ -2,16 +2,15 @@ package com.bumptech.glide.annotation.compiler;
 
 import static com.bumptech.glide.annotation.compiler.ProcessorUtil.nonNulls;
 
+import com.bumptech.glide.annotation.GlideExtension;
 import com.bumptech.glide.annotation.GlideOption;
 import com.bumptech.glide.annotation.GlideType;
-import com.google.common.base.Function;
-import com.google.common.collect.FluentIterable;
 import com.squareup.javapoet.ClassName;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import javax.annotation.processing.ProcessingEnvironment;
-import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
@@ -23,7 +22,7 @@ import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic.Kind;
 
 /**
- * Validates that classes annotated with {@link com.bumptech.glide.annotation.GlideExtension}
+ * Validates that classes annotated with {@link GlideExtension}
  * contains methods with the expected format.
  *
  * <p>Validation is performed so that errors can be found when a library is compiled. Without
@@ -260,15 +259,9 @@ final class GlideExtensionValidator {
 
   private void validateAnnotatedNonNull(ExecutableElement executableElement) {
     Set<String> annotationNames =
-        FluentIterable.from(executableElement.getAnnotationMirrors())
-            .transform(
-                new Function<AnnotationMirror, String>() {
-                  @Override
-                  public String apply(AnnotationMirror input) {
-                    return input.getAnnotationType().asElement().toString();
-                  }
-                })
-            .toSet();
+        executableElement.getAnnotationMirrors().stream()
+            .map(input -> input.getAnnotationType().asElement().toString())
+            .collect(Collectors.toSet());
     boolean noNonNull = true;
     for (ClassName nonNull : nonNulls()) {
       if (annotationNames.contains(nonNull.reflectionName())) {

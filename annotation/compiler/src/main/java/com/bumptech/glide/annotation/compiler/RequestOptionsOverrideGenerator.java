@@ -4,16 +4,17 @@ import static com.bumptech.glide.annotation.compiler.RequestOptionsGenerator.BAS
 
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
-import com.google.common.base.Predicate;
 import com.google.common.collect.FluentIterable;
 import com.squareup.javapoet.AnnotationSpec;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.MethodSpec.Builder;
 import com.squareup.javapoet.ParameterSpec;
 import com.squareup.javapoet.TypeName;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.ExecutableElement;
@@ -44,29 +45,16 @@ final class RequestOptionsOverrideGenerator {
 
   List<MethodSpec> generateInstanceMethodOverridesForRequestOptions(
       final TypeName typeToOverrideIn, final Set<String> excludedMethods) {
-    return FluentIterable.from(
-            processorUtil.findInstanceMethodsReturning(
-                baseRequestOptionsType, baseRequestOptionsType))
-        .filter(
-            new Predicate<ExecutableElement>() {
-              @Override
-              public boolean apply(ExecutableElement input) {
-                return !excludedMethods.contains(input.getSimpleName().toString());
-              }
-            })
-        .transform(
-            new Function<ExecutableElement, MethodSpec>() {
-              @Override
-              public MethodSpec apply(ExecutableElement input) {
-                return generateRequestOptionOverride(typeToOverrideIn, input);
-              }
-            })
-        .toList();
+    return processorUtil.findInstanceMethodsReturning(
+        baseRequestOptionsType, baseRequestOptionsType).stream()
+        .filter(input -> !excludedMethods.contains(input.getSimpleName().toString()))
+        .map(input -> generateRequestOptionOverride(typeToOverrideIn, input))
+        .collect(Collectors.toList());
   }
 
   private MethodSpec generateRequestOptionOverride(
       TypeName typeToOverrideIn, ExecutableElement methodToOverride) {
-    MethodSpec.Builder result =
+    Builder result =
         processorUtil.overriding(methodToOverride).returns(typeToOverrideIn);
     result.addCode(
         CodeBlock.builder()

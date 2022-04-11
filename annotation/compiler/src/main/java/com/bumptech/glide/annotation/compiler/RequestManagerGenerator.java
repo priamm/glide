@@ -3,9 +3,6 @@ package com.bumptech.glide.annotation.compiler;
 import com.bumptech.glide.annotation.GlideExtension;
 import com.bumptech.glide.annotation.GlideType;
 import com.google.common.base.Function;
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
-import com.google.common.collect.FluentIterable;
 import com.google.common.collect.Lists;
 import com.squareup.javapoet.AnnotationSpec;
 import com.squareup.javapoet.ClassName;
@@ -15,9 +12,11 @@ import com.squareup.javapoet.ParameterSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeSpec;
 import com.squareup.javapoet.TypeVariableName;
-import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.annotation.Nullable;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.AnnotationMirror;
@@ -116,11 +115,10 @@ final class RequestManagerGenerator {
         .addMethods(generateRequestManagerRequestManagerMethodOverrides(generatedCodePackageName))
         .addMethods(generateRequestManagerRequestBuilderMethodOverrides())
         .addMethods(
-            FluentIterable.from(
-                    Collections.singletonList(
-                        generateOverrideSetRequestOptions(
-                            generatedCodePackageName, requestOptions)))
-                .filter(Predicates.<MethodSpec>notNull()))
+            Stream.of(
+                generateOverrideSetRequestOptions(
+                    generatedCodePackageName, requestOptions))
+                .filter(Objects::nonNull).collect(Collectors.toList()))
         .build();
   }
 
@@ -177,17 +175,9 @@ final class RequestManagerGenerator {
   /** Generates the list of overrides of methods that return {@code RequestManager}. */
   private List<MethodSpec> generateRequestManagerRequestManagerMethodOverrides(
       final String generatedPackageName) {
-    return FluentIterable.from(
-            processorUtil.findInstanceMethodsReturning(requestManagerType, requestManagerType))
-        .transform(
-            new Function<ExecutableElement, MethodSpec>() {
-              @Override
-              public MethodSpec apply(@Nullable ExecutableElement input) {
-                return generateRequestManagerRequestManagerMethodOverride(
-                    generatedPackageName, input);
-              }
-            })
-        .toList();
+    return processorUtil.findInstanceMethodsReturning(requestManagerType, requestManagerType)
+        .stream().map(input -> generateRequestManagerRequestManagerMethodOverride(
+            generatedPackageName, input)).collect(Collectors.toList());
   }
 
   private MethodSpec generateRequestManagerRequestManagerMethodOverride(
@@ -213,24 +203,12 @@ final class RequestManagerGenerator {
     TypeMirror rawRequestBuilder =
         processingEnv.getTypeUtils().erasure(requestBuilderType.asType());
 
-    return FluentIterable.from(
-            processorUtil.findInstanceMethodsReturning(requestManagerType, rawRequestBuilder))
-        .filter(
-            new Predicate<ExecutableElement>() {
-              @Override
-              public boolean apply(ExecutableElement input) {
-                // Skip the <T> as(Class<T>) method.
-                return !input.getSimpleName().toString().equals("as");
-              }
-            })
-        .transform(
-            new Function<ExecutableElement, MethodSpec>() {
-              @Override
-              public MethodSpec apply(ExecutableElement input) {
-                return generateRequestManagerRequestBuilderMethodOverride(input);
-              }
-            })
-        .toList();
+    return processorUtil.findInstanceMethodsReturning(requestManagerType, rawRequestBuilder)
+        .stream().filter(input -> {
+          // Skip the <T> as(Class<T>) method.
+          return !input.getSimpleName().toString().equals("as");
+        }).map(this::generateRequestManagerRequestBuilderMethodOverride)
+        .collect(Collectors.toList());
   }
 
   /**
@@ -247,7 +225,7 @@ final class RequestManagerGenerator {
     ParameterizedTypeName generatedRequestBuilderOfType =
         ParameterizedTypeName.get(generatedRequestBuilderClassName, ClassName.get(typeArgument));
 
-    MethodSpec.Builder builder =
+    Builder builder =
         processorUtil.overriding(methodToOverride).returns(generatedRequestBuilderOfType);
     builder.addCode(
         ProcessorUtil.generateCastingSuperCall(generatedRequestBuilderOfType, builder.build()));
@@ -262,14 +240,8 @@ final class RequestManagerGenerator {
     List<ExecutableElement> requestManagerExtensionMethods =
         processorUtil.findAnnotatedElementsInClasses(glideExtensions, GlideType.class);
 
-    return Lists.transform(
-        requestManagerExtensionMethods,
-        new Function<ExecutableElement, MethodSpec>() {
-          @Override
-          public MethodSpec apply(ExecutableElement input) {
-            return generateAdditionalRequestManagerMethod(input);
-          }
-        });
+    return requestManagerExtensionMethods.stream()
+        .map(this::generateAdditionalRequestManagerMethod).collect(Collectors.toList());
   }
 
   // Generates methods added to RequestManager via GlideExtensions.

@@ -10,17 +10,17 @@ import com.google.common.base.Predicate;
 import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableBiMap;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
 import com.squareup.javapoet.AnnotationSpec;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.MethodSpec.Builder;
 import com.squareup.javapoet.ParameterSpec;
 import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeSpec;
 import com.squareup.javapoet.TypeVariableName;
-import com.sun.tools.javac.code.Attribute;
+import com.sun.tools.javac.code.Attribute.UnresolvedClass;
 import com.sun.tools.javac.code.Type.ClassType;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.InvocationTargetException;
@@ -31,8 +31,9 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
+import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
@@ -51,7 +52,7 @@ import javax.lang.model.type.TypeVariable;
 import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
-import javax.tools.Diagnostic;
+import javax.tools.Diagnostic.Kind;
 
 /** Utilities for writing classes and logging. */
 final class ProcessorUtil {
@@ -204,28 +205,15 @@ final class ProcessorUtil {
     return generateSeeMethodJavadocInternal(
         nameOfClassContainingMethod,
         methodSimpleName,
-        Lists.transform(
-            methodParameters,
-            new Function<VariableElement, Object>() {
-              @Override
-              public Object apply(VariableElement input) {
-                return getJavadocSafeName(input);
-              }
-            }));
+        methodParameters.stream().map(this::getJavadocSafeName)
+            .collect(Collectors.toList()));
   }
 
   CodeBlock generateSeeMethodJavadoc(TypeName nameOfClassContainingMethod, MethodSpec methodSpec) {
     return generateSeeMethodJavadocInternal(
         nameOfClassContainingMethod,
         methodSpec.name,
-        Lists.transform(
-            methodSpec.parameters,
-            new Function<ParameterSpec, Object>() {
-              @Override
-              public Object apply(ParameterSpec input) {
-                return input.type;
-              }
-            }));
+        methodSpec.parameters.stream().map(input -> input.type).collect(Collectors.toList()));
   }
 
   private CodeBlock generateSeeMethodJavadocInternal(
@@ -270,7 +258,7 @@ final class ProcessorUtil {
   }
 
   void infoLog(String toLog) {
-    processingEnv.getMessager().printMessage(Diagnostic.Kind.NOTE, "[" + round + "] " + toLog);
+    processingEnv.getMessager().printMessage(Kind.NOTE, "[" + round + "] " + toLog);
   }
 
   static CodeBlock generateCastingSuperCall(TypeName toReturn, MethodSpec method) {
@@ -279,21 +267,16 @@ final class ProcessorUtil {
         .add(
             FluentIterable.from(method.parameters)
                 .transform(
-                    new Function<ParameterSpec, String>() {
-                      @Override
-                      public String apply(ParameterSpec input) {
-                        return input.name;
-                      }
-                    })
+                    input -> input.name)
                 .join(Joiner.on(",")))
         .add(");\n")
         .build();
   }
 
-  MethodSpec.Builder overriding(ExecutableElement method) {
+  Builder overriding(ExecutableElement method) {
     String methodName = method.getSimpleName().toString();
 
-    MethodSpec.Builder builder = MethodSpec.methodBuilder(methodName).addAnnotation(Override.class);
+    Builder builder = MethodSpec.methodBuilder(methodName).addAnnotation(Override.class);
 
     Set<Modifier> modifiers = method.getModifiers();
     modifiers = new LinkedHashSet<>(modifiers);
@@ -512,31 +495,27 @@ final class ProcessorUtil {
   }
 
   List<ExecutableElement> findInstanceMethodsReturning(TypeElement clazz, TypeMirror returnType) {
-    return FluentIterable.from(clazz.getEnclosedElements())
-        .filter(new FilterPublicMethods(returnType, MethodType.INSTANCE))
-        .transform(new ToMethod())
-        .toList();
+    return clazz.getEnclosedElements().stream()
+        .filter(new FilterPublicMethods(returnType, MethodType.INSTANCE)::apply)
+        .map(new ToMethod()::apply).collect(Collectors.toList());
   }
 
   List<ExecutableElement> findInstanceMethodsReturning(TypeElement clazz, TypeElement returnType) {
-    return FluentIterable.from(clazz.getEnclosedElements())
-        .filter(new FilterPublicMethods(returnType, MethodType.INSTANCE))
-        .transform(new ToMethod())
-        .toList();
+    return clazz.getEnclosedElements().stream()
+        .filter(new FilterPublicMethods(returnType, MethodType.INSTANCE)::apply)
+        .map(new ToMethod()::apply).collect(Collectors.toList());
   }
 
   List<ExecutableElement> findStaticMethodsReturning(TypeElement clazz, TypeElement returnType) {
-    return FluentIterable.from(clazz.getEnclosedElements())
-        .filter(new FilterPublicMethods(returnType, MethodType.STATIC))
-        .transform(new ToMethod())
-        .toList();
+    return clazz.getEnclosedElements().stream()
+        .filter(new FilterPublicMethods(returnType, MethodType.STATIC)::apply)
+        .map(new ToMethod()::apply).collect(Collectors.toList());
   }
 
   List<ExecutableElement> findStaticMethods(TypeElement clazz) {
-    return FluentIterable.from(clazz.getEnclosedElements())
-        .filter(new FilterPublicMethods((TypeMirror) null /*returnType*/, MethodType.STATIC))
-        .transform(new ToMethod())
-        .toList();
+    return clazz.getEnclosedElements().stream()
+        .filter(new FilterPublicMethods((TypeMirror) null /*returnType*/, MethodType.STATIC)::apply)
+        .map(new ToMethod()::apply).collect(Collectors.toList());
   }
 
   Set<String> findClassValuesFromAnnotationOnClassAsNames(
@@ -549,7 +528,7 @@ final class ProcessorUtil {
       if (!annotationClassName.equals(annotationMirror.getAnnotationType().toString())) {
         continue;
       }
-      Set<? extends Map.Entry<? extends ExecutableElement, ? extends AnnotationValue>> values =
+      Set<? extends Entry<? extends ExecutableElement, ? extends AnnotationValue>> values =
           annotationMirror.getElementValues().entrySet();
       // Excludes has only one value. If we ever change that, we'd need to iterate over all
       // values in the entry set and compare the keys to whatever our Annotation's attribute is
@@ -559,7 +538,7 @@ final class ProcessorUtil {
       }
       excludedModuleAnnotationValue = values.iterator().next().getValue();
       if (excludedModuleAnnotationValue == null
-          || excludedModuleAnnotationValue instanceof Attribute.UnresolvedClass) {
+          || excludedModuleAnnotationValue instanceof UnresolvedClass) {
         throw new IllegalArgumentException(
             "Failed to find value for: "
                 + annotationClass

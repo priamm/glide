@@ -2,17 +2,15 @@ package com.bumptech.glide.annotation.compiler;
 
 import com.bumptech.glide.annotation.GlideExtension;
 import com.bumptech.glide.annotation.GlideOption;
-import com.google.common.base.Function;
 import com.google.common.base.Joiner;
-import com.google.common.base.Predicate;
 import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Lists;
 import com.squareup.javapoet.AnnotationSpec;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.MethodSpec.Builder;
 import com.squareup.javapoet.ParameterSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
@@ -25,6 +23,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.AnnotationMirror;
@@ -188,7 +187,7 @@ final class RequestBuilderGenerator {
   }
   /**
    * Generates methods with equivalent names and arguments to methods annotated with {@link
-   * GlideOption} in {@link com.bumptech.glide.annotation.GlideExtension}s that return our generated
+   * GlideOption} in {@link GlideExtension}s that return our generated
    * {@code com.bumptech.glide.RequestBuilder} subclass.
    */
   private List<MethodSpec> generateGeneratedRequestOptionsEquivalents(
@@ -197,22 +196,9 @@ final class RequestBuilderGenerator {
     if (generatedOptions == null) {
       return Collections.emptyList();
     }
-    return FluentIterable.from(generatedOptions.methodSpecs)
-        .filter(
-            new Predicate<MethodSpec>() {
-              @Override
-              public boolean apply(MethodSpec input) {
-                return isUsefulGeneratedRequestOption(requestOptionsExtensionMethods, input);
-              }
-            })
-        .transform(
-            new Function<MethodSpec, MethodSpec>() {
-              @Override
-              public MethodSpec apply(MethodSpec input) {
-                return generateGeneratedRequestOptionEquivalent(input);
-              }
-            })
-        .toList();
+    return generatedOptions.methodSpecs.stream()
+        .filter(input -> isUsefulGeneratedRequestOption(requestOptionsExtensionMethods, input))
+        .map(this::generateGeneratedRequestOptionEquivalent).collect(Collectors.toList());
   }
 
   /**
@@ -234,15 +220,9 @@ final class RequestBuilderGenerator {
 
   private boolean isExtensionMethod(
       List<MethodSpec> requestOptionsExtensionMethods, final MethodSpec requestOptionsMethod) {
-    return FluentIterable.from(requestOptionsExtensionMethods)
-        .anyMatch(
-            new Predicate<MethodSpec>() {
-              @Override
-              public boolean apply(MethodSpec input) {
-                return input.name.equals(requestOptionsMethod.name)
-                    && input.parameters.equals(requestOptionsMethod.parameters);
-              }
-            });
+    return requestOptionsExtensionMethods.stream()
+        .anyMatch(input -> input.name.equals(requestOptionsMethod.name)
+            && input.parameters.equals(requestOptionsMethod.parameters));
   }
 
   /**
@@ -256,17 +236,12 @@ final class RequestBuilderGenerator {
             .add(
                 FluentIterable.from(requestOptionMethod.parameters)
                     .transform(
-                        new Function<ParameterSpec, String>() {
-                          @Override
-                          public String apply(ParameterSpec input) {
-                            return input.name;
-                          }
-                        })
+                        input -> input.name)
                     .join(Joiner.on(", ")))
             .add(");\n")
             .build();
 
-    MethodSpec.Builder result =
+    Builder result =
         MethodSpec.methodBuilder(requestOptionMethod.name)
             .addJavadoc(
                 processorUtil.generateSeeMethodJavadoc(
@@ -274,20 +249,14 @@ final class RequestBuilderGenerator {
             .addModifiers(Modifier.PUBLIC)
             .varargs(requestOptionMethod.varargs)
             .addAnnotations(
-                FluentIterable.from(requestOptionMethod.annotations)
-                    .filter(
-                        new Predicate<AnnotationSpec>() {
-                          @Override
-                          public boolean apply(AnnotationSpec input) {
-                            return !input.type.equals(TypeName.get(Override.class))
-                                // SafeVarargs can only be applied to final methods. GlideRequest is
-                                // non-final to allow for mocking.
-                                && !input.type.equals(TypeName.get(SafeVarargs.class))
-                                // We need to combine warnings below.
-                                && !input.type.equals(TypeName.get(SuppressWarnings.class));
-                          }
-                        })
-                    .toList())
+                requestOptionMethod.annotations.stream()
+                    .filter(input -> !input.type.equals(TypeName.get(Override.class))
+                        // SafeVarargs can only be applied to final methods. GlideRequest is
+                        // non-final to allow for mocking.
+                        && !input.type.equals(TypeName.get(SafeVarargs.class))
+                        // We need to combine warnings below.
+                        && !input.type.equals(TypeName.get(SuppressWarnings.class)))
+                    .collect(Collectors.toList()))
             .addTypeVariables(requestOptionMethod.typeVariables)
             .addParameters(requestOptionMethod.parameters)
             .returns(generatedRequestBuilderOfTranscodeType)
@@ -310,15 +279,7 @@ final class RequestBuilderGenerator {
         if (annotation.type.equals(TypeName.get(SuppressWarnings.class))) {
           List<CodeBlock> codeBlocks = annotation.members.get("value");
           suppressions.addAll(
-              FluentIterable.from(codeBlocks)
-                  .transform(
-                      new Function<CodeBlock, String>() {
-                        @Override
-                        public String apply(CodeBlock input) {
-                          return input.toString();
-                        }
-                      })
-                  .toSet());
+              codeBlocks.stream().map(CodeBlock::toString).collect(Collectors.toSet()));
         }
       }
     }
@@ -352,14 +313,8 @@ final class RequestBuilderGenerator {
   private List<MethodSpec> generateRequestBuilderOverrides() {
     TypeMirror rawRequestBuilderType =
         processingEnv.getTypeUtils().erasure(requestBuilderType.asType());
-    return Lists.transform(
-        processorUtil.findInstanceMethodsReturning(requestBuilderType, rawRequestBuilderType),
-        new Function<ExecutableElement, MethodSpec>() {
-          @Override
-          public MethodSpec apply(ExecutableElement input) {
-            return generateRequestBuilderOverride(input);
-          }
-        });
+    return processorUtil.findInstanceMethodsReturning(requestBuilderType, rawRequestBuilderType)
+        .stream().map(this::generateRequestBuilderOverride).collect(Collectors.toList());
   }
 
   /**
@@ -376,7 +331,7 @@ final class RequestBuilderGenerator {
     ParameterizedTypeName generatedRequestBuilderOfType =
         ParameterizedTypeName.get(generatedRequestBuilderClassName, ClassName.get(typeArgument));
 
-    MethodSpec.Builder builder =
+    Builder builder =
         processorUtil.overriding(methodToOverride).returns(generatedRequestBuilderOfType);
     builder.addCode(
         CodeBlock.builder()
@@ -387,12 +342,7 @@ final class RequestBuilderGenerator {
             .add(
                 FluentIterable.from(builder.build().parameters)
                     .transform(
-                        new Function<ParameterSpec, String>() {
-                          @Override
-                          public String apply(ParameterSpec input) {
-                            return input.name;
-                          }
-                        })
+                        input -> input.name)
                     .join(Joiner.on(", ")))
             .add(");\n")
             .build());

@@ -5,9 +5,7 @@ import com.bumptech.glide.annotation.GlideOption;
 import com.google.common.base.Function;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
-import com.google.common.base.Predicate;
 import com.google.common.base.Strings;
-import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
@@ -24,6 +22,7 @@ import com.squareup.javapoet.TypeVariableName;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.ExecutableElement;
@@ -104,37 +103,15 @@ final class RequestOptionsGenerator {
     RequestOptionsExtensionGenerator requestOptionsExtensionGenerator =
         new RequestOptionsExtensionGenerator(glideOptionsName, processorUtil);
     List<MethodAndStaticVar> instanceMethodsForExtensions =
-        FluentIterable.from(
-                requestOptionsExtensionGenerator.generateInstanceMethodsForExtensions(
-                    glideExtensionClassNames))
-            .transform(
-                new Function<MethodSpec, MethodAndStaticVar>() {
-                  @Override
-                  public MethodAndStaticVar apply(MethodSpec input) {
-                    return new MethodAndStaticVar(input);
-                  }
-                })
-            .toList();
+        requestOptionsExtensionGenerator.generateInstanceMethodsForExtensions(
+            glideExtensionClassNames).stream().map(MethodAndStaticVar::new)
+            .collect(Collectors.toList());
 
     List<MethodAndStaticVar> staticMethodsForExtensions =
-        FluentIterable.from(
-                requestOptionsExtensionGenerator.getRequestOptionExtensionMethods(
-                    glideExtensionClassNames))
-            .filter(
-                new Predicate<ExecutableElement>() {
-                  @Override
-                  public boolean apply(ExecutableElement input) {
-                    return !skipStaticMethod(input);
-                  }
-                })
-            .transform(
-                new Function<ExecutableElement, MethodAndStaticVar>() {
-                  @Override
-                  public MethodAndStaticVar apply(ExecutableElement input) {
-                    return generateStaticMethodEquivalentForExtensionMethod(input);
-                  }
-                })
-            .toList();
+        requestOptionsExtensionGenerator.getRequestOptionExtensionMethods(
+            glideExtensionClassNames).stream().filter(input -> !skipStaticMethod(input))
+            .map(this::generateStaticMethodEquivalentForExtensionMethod)
+            .collect(Collectors.toList());
 
     List<MethodAndStaticVar> methodsForExtensions = new ArrayList<>();
     methodsForExtensions.addAll(instanceMethodsForExtensions);
@@ -142,14 +119,8 @@ final class RequestOptionsGenerator {
 
     Set<MethodSignature> extensionMethodSignatures =
         ImmutableSet.copyOf(
-            Iterables.transform(
-                methodsForExtensions,
-                new Function<MethodAndStaticVar, MethodSignature>() {
-                  @Override
-                  public MethodSignature apply(MethodAndStaticVar f) {
-                    return new MethodSignature(f.method);
-                  }
-                }));
+            methodsForExtensions.stream().map(f -> new MethodSignature(f.method))
+                .collect(Collectors.toList()));
 
     List<MethodAndStaticVar> staticOverrides = generateStaticMethodOverridesForRequestOptions();
     List<MethodSpec> instanceOverrides =
@@ -476,15 +447,8 @@ final class RequestOptionsGenerator {
       isStatic = spec.modifiers.contains(Modifier.STATIC);
       returnType = spec.returnType;
       parameterTypes =
-          Lists.transform(
-              spec.parameters,
-              new Function<ParameterSpec, TypeName>() {
-                @Nullable
-                @Override
-                public TypeName apply(ParameterSpec parameterSpec) {
-                  return parameterSpec.type;
-                }
-              });
+          spec.parameters.stream().map(parameterSpec -> parameterSpec.type)
+              .collect(Collectors.toList());
     }
 
     @Override

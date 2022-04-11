@@ -1,9 +1,7 @@
 package com.bumptech.glide.annotation.compiler;
 
 import com.bumptech.glide.annotation.GlideExtension;
-import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
 import com.squareup.javapoet.AnnotationSpec;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.MethodSpec;
@@ -12,6 +10,7 @@ import com.squareup.javapoet.ParameterSpec;
 import com.squareup.javapoet.TypeSpec;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.ExecutableElement;
@@ -117,19 +116,14 @@ final class GlideGenerator {
 
   private List<MethodSpec> generateOverridesForGlideMethods(
       final String generatedCodePackageName, final TypeSpec generatedRequestManager) {
-    return Lists.transform(
-        discoverGlideMethodsToOverride(),
-        new Function<ExecutableElement, MethodSpec>() {
-          @Override
-          public MethodSpec apply(ExecutableElement input) {
-            if (isGlideWithMethod(input)) {
-              return overrideGlideWithMethod(
-                  generatedCodePackageName, generatedRequestManager, input);
-            } else {
-              return overrideGlideStaticMethod(input);
-            }
-          }
-        });
+    return discoverGlideMethodsToOverride().stream().map(input -> {
+      if (isGlideWithMethod(input)) {
+        return overrideGlideWithMethod(
+            generatedCodePackageName, generatedRequestManager, input);
+      } else {
+        return overrideGlideStaticMethod(input);
+      }
+    }).collect(Collectors.toList());
   }
 
   private MethodSpec overrideGlideStaticMethod(ExecutableElement methodToOverride) {
